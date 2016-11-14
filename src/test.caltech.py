@@ -9,7 +9,7 @@ import skimage.io
 import matplotlib.pyplot as plt
 
 import os
-import ipdb
+#import ipdb
 
 testset_path = '../data/caltech/test.pickle'
 label_dict_path = '../data/caltech/label_dict.pickle'

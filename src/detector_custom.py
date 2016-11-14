@@ -9,7 +9,55 @@ class Detector():
 
         with open(weight_file_path) as f:
             self.pretrained_weights = cPickle.load(f)
-    
+            
+   
+    def put_kernels_on_grid (self, kernel, grid_Y, grid_X, pad = 1):
+
+        '''Visualize conv. features as an image (mostly for the 1st layer).
+        Place kernel into a grid, with some paddings between adjacent filters.
+        Args:
+          kernel:            tensor of shape [Y, X, NumChannels, NumKernels]
+          (grid_Y, grid_X):  shape of the grid. Require: NumKernels == grid_Y * grid_X
+                           User is responsible of how to break into two multiples.
+          pad:               number of black pixels around each filter (between them)
+        Return:
+          Tensor of shape [(Y+2*pad)*grid_Y, (X+2*pad)*grid_X, NumChannels, 1].
+        '''
+
+        x_min = tf.reduce_min(kernel)
+        x_max = tf.reduce_max(kernel)
+
+        kernel1 = (kernel - x_min) / (x_max - x_min)
+
+        # pad X and Y
+        x1 = tf.pad(kernel1, tf.constant( [[pad,pad],[pad, pad],[0,0],[0,0]] ), mode = 'CONSTANT')
+
+        # X and Y dimensions, w.r.t. padding
+        Y = kernel1.get_shape()[0] + 2 * pad
+        X = kernel1.get_shape()[1] + 2 * pad
+
+        channels = kernel1.get_shape()[2]
+
+        # put NumKernels to the 1st dimension
+        x2 = tf.transpose(x1, (3, 0, 1, 2))
+        # organize grid on Y axis
+        x3 = tf.reshape(x2, tf.pack([grid_X, Y * grid_Y, X, channels])) #3
+
+        # switch X and Y axes
+        x4 = tf.transpose(x3, (0, 2, 1, 3))
+        # organize grid on X axis
+        x5 = tf.reshape(x4, tf.pack([1, X * grid_X, Y * grid_Y, channels])) #3
+
+        # back to normal order (not combining with the next step for clarity)
+        x6 = tf.transpose(x5, (2, 1, 3, 0))
+
+        # to tf.image_summary order [batch_size, height, width, channels],
+        #   where in this case batch_size == 1
+        x7 = tf.transpose(x6, (3, 0, 1, 2))
+
+        # scale to [0, 255] and convert to uint8
+        return tf.image.convert_image_dtype(x7, dtype = tf.uint8)
+        
     # Accessing weights and biases according to layer names, check out the layers name 
     def get_weight( self, layer_name):
         layer = self.pretrained_weights[layer_name]
@@ -22,10 +70,16 @@ class Detector():
     def get_conv_weight( self, name ):
         f = self.get_weight( name )
         return f.transpose(( 2,3,1,0 ))   # We have to do this since weights are stored in caffe format
-
+    
+    def visualize_filters(self, weight_name):
+        grid_x =8
+        grid_y =8
+        return self.put_kernels_on_grid (weight_name, grid_y, grid_x)
+    
+    
     # This could be for using pre stored weights
     def conv_layer( self, bottom, name ):
-        with tf.variable_scope(name, reuse=True) as scope:
+        with tf.variable_scope(name) as scope:
 
             w = self.get_conv_weight(name)
             b = self.get_bias(name)
@@ -54,7 +108,7 @@ class Detector():
 
     
     def new_conv_layer( self, bottom, filter_shape, name ):
-        with tf.variable_scope( name, reuse=True) as scope:
+        with tf.variable_scope( name) as scope:
             w = tf.get_variable(
                     "W",
                     shape=filter_shape,
@@ -86,7 +140,7 @@ class Detector():
         else:
             cw = cw.transpose((1,0))
 
-        with tf.variable_scope(name, reuse=True) as scope:
+        with tf.variable_scope(name) as scope:
             cw = tf.get_variable(
                     "W",
                     shape=cw.shape,
@@ -105,7 +159,7 @@ class Detector():
         dim = np.prod( shape[1:] )
         x = tf.reshape( bottom, [-1, dim])
 
-        with tf.variable_scope(name, reuse=True) as scope:
+        with tf.variable_scope(name) as scope:
             w = tf.get_variable(
                     "W",
                     shape=[input_size, output_size],
@@ -157,6 +211,8 @@ class Detector():
         
         # Here is introduction of new conv layer in conventional VGG Net, because we want to increase the resolution
         # of feature maps here, therefore from 512 to 1024
+        
+        # This conv6 is probably not initialized
         
         conv6 = self.new_conv_layer( relu5_3, [3,3,512,1024], "conv6")
         gap = tf.reduce_mean( conv6, [1,2] )    # Computing global mean in 2D
