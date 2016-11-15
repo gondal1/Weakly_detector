@@ -5,7 +5,7 @@ import pandas as pd
 from detector import Detector
 from util import load_image
 import os
-import ipdb
+#import ipdb
 
 weight_path = '../data/caffe_layers_value.pickle'
 model_path = '../models/caltech256/'

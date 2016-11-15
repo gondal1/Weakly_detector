@@ -7,69 +7,25 @@ class Detector():
         self.image_mean = [103.939, 116.779, 123.68]
         self.n_labels = n_labels
 
-        with open(weight_file_path) as f:
-            self.pretrained_weights = cPickle.load(f)
-            
-   
-    def put_kernels_on_grid (self, kernel, grid_Y, grid_X, pad = 1):
+        #with open(weight_file_path) as f:
+        self.pretrained_weights = np.load(weight_file_path)
 
-        '''Visualize conv. features as an image (mostly for the 1st layer).
-        Place kernel into a grid, with some paddings between adjacent filters.
-        Args:
-          kernel:            tensor of shape [Y, X, NumChannels, NumKernels]
-          (grid_Y, grid_X):  shape of the grid. Require: NumKernels == grid_Y * grid_X
-                           User is responsible of how to break into two multiples.
-          pad:               number of black pixels around each filter (between them)
-        Return:
-          Tensor of shape [(Y+2*pad)*grid_Y, (X+2*pad)*grid_X, NumChannels, 1].
-        '''
-
-        x_min = tf.reduce_min(kernel)
-        x_max = tf.reduce_max(kernel)
-
-        kernel1 = (kernel - x_min) / (x_max - x_min)
-
-        # pad X and Y
-        x1 = tf.pad(kernel1, tf.constant( [[pad,pad],[pad, pad],[0,0],[0,0]] ), mode = 'CONSTANT')
-
-        # X and Y dimensions, w.r.t. padding
-        Y = kernel1.get_shape()[0] + 2 * pad
-        X = kernel1.get_shape()[1] + 2 * pad
-
-        channels = kernel1.get_shape()[2]
-
-        # put NumKernels to the 1st dimension
-        x2 = tf.transpose(x1, (3, 0, 1, 2))
-        # organize grid on Y axis
-        x3 = tf.reshape(x2, tf.pack([grid_X, Y * grid_Y, X, channels])) #3
-
-        # switch X and Y axes
-        x4 = tf.transpose(x3, (0, 2, 1, 3))
-        # organize grid on X axis
-        x5 = tf.reshape(x4, tf.pack([1, X * grid_X, Y * grid_Y, channels])) #3
-
-        # back to normal order (not combining with the next step for clarity)
-        x6 = tf.transpose(x5, (2, 1, 3, 0))
-
-        # to tf.image_summary order [batch_size, height, width, channels],
-        #   where in this case batch_size == 1
-        x7 = tf.transpose(x6, (3, 0, 1, 2))
-
-        # scale to [0, 255] and convert to uint8
-        return tf.image.convert_image_dtype(x7, dtype = tf.uint8)
         
     # Accessing weights and biases according to layer names, check out the layers name 
     def get_weight( self, layer_name):
-        layer = self.pretrained_weights[layer_name]
-        return layer[0]
-
+        #layer = self.pretrained_weights[layer_name]
+        #return layer['weights']
+        layer = (self.pretrained_weights.item()[layer_name])['weights']
+        return layer
+        
     def get_bias( self, layer_name ):
-        layer = self.pretrained_weights[layer_name]
-        return layer[1]
-
+        #layer = self.pretrained_weights[layer_name]
+        #return layer['biases']
+        return (self.pretrained_weights.item()[layer_name])['biases']
+        
     def get_conv_weight( self, name ):
         f = self.get_weight( name )
-        return f.transpose(( 2,3,1,0 ))   # We have to do this since weights are stored in caffe format
+        return f  #f.transpose(( 2,3,1,0 ))   # We have to do this since weights are stored in caffe format
     
     def visualize_filters(self, weight_name):
         grid_x =8
@@ -83,6 +39,8 @@ class Detector():
 
             w = self.get_conv_weight(name)
             b = self.get_bias(name)
+            #print ('waleed', w.shape)
+            #print ('gondal', b.shape)
             # tf.get_variable(name, shape, initializer)
             # Over here because of tf.variable_scope, names of varibales will be "name/W" and "name/b"
             # with tf.get_varible there are 2 options 
@@ -94,6 +52,7 @@ class Detector():
                     shape=w.shape,
                     initializer=tf.constant_initializer(w)
                     )
+            print ('check conv_weights', conv_weights.get_shape())
             conv_biases = tf.get_variable(
                     "b",
                     shape=b.shape,
@@ -101,6 +60,7 @@ class Detector():
                     )
 
             conv = tf.nn.conv2d( bottom, conv_weights, [1,1,1,1], padding='SAME')
+            print ('before bias shape of conv', conv.get_shape())
             bias = tf.nn.bias_add( conv, conv_biases )
             relu = tf.nn.relu( bias, name=name )
 
@@ -214,28 +174,103 @@ class Detector():
         
         # This conv6 is probably not initialized
         
-        conv6 = self.new_conv_layer( relu5_3, [3,3,512,1024], "conv6")
-        gap = tf.reduce_mean( conv6, [1,2] )    # Computing global mean in 2D
         
-        # this GAP is layer is for inference as weighted sum of the GAP values give us the output, here weights (gap_w)
+        
+        #***************************************************************************************************************
+        # IN CAFFE implementation, Grouped Convolution or Depthwise Grouping is done. Its dividing the input and kernel into
+        # 2 halves, compute convolutions depthwise and then concating the results
+        # When group=2, the first half of filters are only connected to the first half of input channels and same for 2nd half
+        # of filters
+        # There is no need to do this for training purpose
+        # Following code is to implement Grouped Conv in TF
+        #***************************************************************************************************************
+        
+        
+        with tf.variable_scope("CAM_conv"):
+            
+            name = "CAM_conv"
+            w = self.get_conv_weight(name)
+            b = self.get_bias(name)
+            print ('fizza', w.shape)
+            print ('bangash', b.shape)
+            
+            conv_weights = tf.get_variable(
+                    "W",
+                    shape=w.shape,
+                    initializer=tf.constant_initializer(w)
+                    )
+            print ('check conv_weights', conv_weights.get_shape())
+            conv_biases = tf.get_variable(
+                    "b",
+                    shape=b.shape,
+                    initializer=tf.constant_initializer(b)
+                    )
+            
+            print ('last relu shape', relu5_3.get_shape())
+            
+            group = 2
+            group1, group2 = tf.split(3, group,relu5_3)  # This will give us 2 groups of 256 and 256 filters
+            print ('group shapes', group1.get_shape())
+        
+            # Import CAM_conv weights here i.e. kernel = (3,3,256,1024) and divide them on output into 2
+            #kernel = [3,3,512,1024]
+            
+            kernel1, kernel2 = tf.split(3, group, conv_weights)  # This should give 2 filters of [3,3,256,512]
+            print ('kernel_shapes', kernel1.get_shape())
+        
+            conv_grp1 = tf.nn.conv2d(group1, kernel1, [1,1,1,1], padding='SAME')
+            conv_grp2 = tf.nn.conv2d(group2, kernel2, [1,1,1,1], padding='SAME')
+            conv_output = tf.concat (3, [conv_grp1, conv_grp2])
+            print ('last conv', conv_output.get_shape())
+        
+            # get biases here
+        
+            conv6 = tf.nn.bias_add(conv_output, conv_biases)
+            print ('after bias add - > out', conv6.get_shape())
+        
+            gap = tf.reduce_mean(conv6, [1,2])
+            print ('gap', gap.get_shape())
+        
+        #===========================================================================
+        #conv6 = self.new_conv_layer( relu5_3, [3,3,512,1024], "conv6")  # CAM_conv
+        #gap = tf.reduce_mean( conv6, [1,2] )    # Computing global mean in 2D
+        #===========================================================================
+        
+        
+        # this GAP layer is for inference as weighted sum of the GAP values give us the output, here weights (gap_w)
         # play an important role
         
-        with tf.variable_scope("GAP"):
+        #==============================================================================
+        #with tf.variable_scope("GAP"):   # CAM_fc will be used here
+        #    gap_w = tf.get_variable(
+        #            "W",
+        #            shape=[1024, self.n_labels],
+        #            initializer=tf.random_normal_initializer(0., 0.01))
+
+        #output = tf.matmul( gap, gap_w)
+        #prob = tf.nn.softmax(output)
+        #=================================================================================
+        
+        with tf.variable_scope("CAM_fc"):
+            name = "CAM_fc"
+            w = self.get_conv_weight(name)
+            
             gap_w = tf.get_variable(
                     "W",
-                    shape=[1024, self.n_labels],
-                    initializer=tf.random_normal_initializer(0., 0.01))
-
-        output = tf.matmul( gap, gap_w)
-
-        return pool1, pool2, pool3, pool4, relu5_3, conv6, gap, output
+                    shape=w.shape,
+                    initializer=tf.constant_initializer(w)
+                    )
+        output = tf.matmul(gap, gap_w)
+        prob = tf.nn.softmax(output)
+            
+        return pool1, pool2, pool3, pool4, relu5_3, conv6, gap, output, prob
 
     def get_classmap(self, label, conv6):
         # upsample the weighted sum of filter maps from the last conv layer and upsample them to input image size using bilinear
         # interpolation
         conv6_resized = tf.image.resize_bilinear( conv6, [224, 224] )
         
-        with tf.variable_scope("GAP", reuse=True):  # Reusing the same "gap_w" from variable_scope("GAP")
+        with tf.variable_scope("CAM_fc", reuse=True):  # Reusing the same "gap_w" from variable_scope("GAP")
             label_w = tf.gather(tf.transpose(tf.get_variable("W")), label)  # label_w stands for "label weights"
             label_w = tf.reshape( label_w, [-1, 1024, 1] ) # [batch_size, 1024, 1]
 
