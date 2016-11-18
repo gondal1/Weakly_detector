@@ -119,7 +119,7 @@ class Detector():
 
         return fc
 
-    def inference( self, rgb, train=False ):
+    def inference( self, rgb, dropout, train=False ):
         rgb *= 255.
         r, g, b = tf.split(3, 3, rgb)
         bgr = tf.concat(3,
@@ -162,6 +162,8 @@ class Detector():
         conv6 = self.new_conv_layer( relu5_3, [3,3,512,1024], "conv6")
         gap = tf.reduce_mean( conv6, [1,2] )    # Computing global mean in 2D
         
+        dropout = tf.nn.dropout(gap, dropout) # For testing purpose, don't use dropout
+        
         # this GAP is layer is for inference as weighted sum of the GAP values give us the output, here weights (gap_w)
         # play an important role
         
@@ -171,7 +173,7 @@ class Detector():
                     shape=[1024, self.n_labels],
                     initializer=tf.random_normal_initializer(0., 0.01))
 
-        output = tf.matmul( gap, gap_w)
+        output = tf.matmul( dropout, gap_w)
 
         return pool1, pool2, pool3, pool4, relu5_3, conv6, gap, output
 
