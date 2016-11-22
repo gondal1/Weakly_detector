@@ -57,13 +57,15 @@ def augment(image):
 
     # Randomly flip the image horizontally.
     distorted_image = tf.image.random_flip_left_right(image)
+    distorted_image = tf.image.random_flip_up_down(distorted_image)
 
     # Because these operations are not commutative, consider randomizing
     # the order their operation.
-    distorted_image = tf.image.random_brightness(distorted_image, max_delta=30)
-    distorted_image = tf.image.random_contrast(distorted_image, lower=0.2, upper=2.8)
+    #distorted_image = tf.image.random_brightness(distorted_image, max_delta=0.05)
+    distorted_image = tf.image.random_contrast(distorted_image, lower=0.4, upper=1.0)
 
     # Subtract off the mean and divide by the variance of the pixels.
-    image = tf.image.per_image_whitening(distorted_image)
+    #distorted_image = tf.image.per_image_whitening(distorted_image)
+    distorted_image = tf.image.central_crop(distorted_image, 0.95)
     
-    return image
+    return distorted_image

@@ -74,7 +74,7 @@ weight_decay = tf.reduce_sum(tf.pack([tf.nn.l2_loss(x) for x in weights_only])) 
 loss_tf += weight_decay
 
 sess = tf.InteractiveSession()
-saver = tf.train.Saver( max_to_keep=50 )
+saver = tf.train.Saver(max_to_keep=50)   #Indicates max number of recent checkpoint files to keep
 
 optimizer = tf.train.MomentumOptimizer( learning_rate, momentum )
 grads_and_vars = optimizer.compute_gradients( loss_tf )

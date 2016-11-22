@@ -4,13 +4,14 @@ import cPickle
 #import ipdb
 class Detector():
     def __init__(self, n_labels, weight_file_path=None):
-        self.image_mean = [103.939, 116.779, 123.68]
+        self.image_mean = [108.64628601, 75.86886597, 54.34005737]
         self.n_labels = n_labels
         
         if weight_file_path is not None:
             with open(weight_file_path) as f:
                 self.pretrained_weights = cPickle.load(f)
-    
+                
+                
     # Accessing weights and biases according to layer names, check out the layers name 
     def get_weight( self, layer_name):
         layer = self.pretrained_weights[layer_name]
@@ -26,7 +27,7 @@ class Detector():
 
     # This could be for using pre stored weights
     def conv_layer( self, bottom, name ):
-        with tf.variable_scope(name, reuse=True) as scope:
+        with tf.variable_scope(name) as scope:
 
             w = self.get_conv_weight(name)
             b = self.get_bias(name)
@@ -55,7 +56,7 @@ class Detector():
 
     
     def new_conv_layer( self, bottom, filter_shape, name ):
-        with tf.variable_scope( name, reuse=None) as scope:
+        with tf.variable_scope(name) as scope:
             w = tf.get_variable(
                     "W",
                     shape=filter_shape,
@@ -130,36 +131,49 @@ class Detector():
             ])
 
         relu1_1 = self.new_conv_layer( bgr,[3,3,3,64], "conv1_1" )
+        #self.activation_summary(relu1_1)
         relu1_2 = self.new_conv_layer( relu1_1, [3,3,64,64], "conv1_2" )
-
+        #self.activation_summary(relu1_2)
         pool1 = tf.nn.max_pool(relu1_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                                          padding='SAME', name='pool1')
-
+        
         relu2_1 = self.new_conv_layer(pool1, [3,3,64,128],"conv2_1")
+        #self.activation_summary(relu2_1)
         relu2_2 = self.new_conv_layer(relu2_1, [3,3,128,128],"conv2_2")
+        #self.activation_summary(relu2_2)
         pool2 = tf.nn.max_pool(relu2_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                                padding='SAME', name='pool2')
 
         relu3_1 = self.new_conv_layer( pool2, [3,3,128,256], "conv3_1")
+        #self.activation_summary(relu3_1)
         relu3_2 = self.new_conv_layer( relu3_1, [3,3,256,256], "conv3_2")
+        #self.activation_summary(relu3_2)
         relu3_3 = self.new_conv_layer( relu3_2, [3,3,256,256],"conv3_3")
+        #self.activation_summary(relu3_3)
         pool3 = tf.nn.max_pool(relu3_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                                padding='SAME', name='pool3')
 
         relu4_1 = self.new_conv_layer( pool3, [3,3,256,512], "conv4_1")
+        #self.activation_summary(relu4_1)
         relu4_2 = self.new_conv_layer( relu4_1, [3,3,512,512], "conv4_2")
+        #self.activation_summary(relu4_2)
         relu4_3 = self.new_conv_layer( relu4_2, [3,3,512,512],"conv4_3")
+        #self.activation_summary(relu4_3)
         pool4 = tf.nn.max_pool(relu4_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
                                padding='SAME', name='pool4')
 
         relu5_1 = self.new_conv_layer( pool4, [3,3,512,512],"conv5_1")
+        #self.activation_summary(relu5_1)
         relu5_2 = self.new_conv_layer( relu5_1, [3,3,512,512],"conv5_2")
+        #self.activation_summary(relu5_2)
         relu5_3 = self.new_conv_layer( relu5_2, [3,3,512,512],"conv5_3")
+        #self.activation_summary(relu5_3)
         
         # Here is introduction of new conv layer in conventional VGG Net, because we want to increase the resolution
         # of feature maps here, therefore from 512 to 1024
         
         conv6 = self.new_conv_layer( relu5_3, [3,3,512,1024], "conv6")
+        #self.activation_summary(conv6)
         gap = tf.reduce_mean( conv6, [1,2] )    # Computing global mean in 2D
         
         dropout = tf.nn.dropout(gap, dropout) # For testing purpose, don't use dropout
